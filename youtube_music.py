@@ -1,6 +1,7 @@
 import time
 import sys
 import asyncio
+import requests
 from pypresence import Presence
 
 IS_WINDOWS = sys.platform.startswith('win')
@@ -15,7 +16,6 @@ client_id = '1512429120431194217'
 RPC = Presence(client_id)
 is_connected = False
 last_track = None
-start_timestamp = None
 windows_manager = None
 
 def connect_discord():
@@ -27,6 +27,23 @@ def connect_discord():
             print("Sikeresen csatlakozva a Discordhoz!")
     except Exception:
         is_connected = False
+
+# --- ALBUM BORÍTÓ KERESŐ API ---
+def get_album_art_url(title, artist):
+    try:
+        # Tisztítjuk a keresési kifejezést a biztosabb találatért
+        query = f"{artist} {title}".replace(" - Topic", "").replace("(Official Video)", "")
+        url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
+        
+        response = requests.get(url, timeout=3).json()
+        if response.get("resultCount", 0) > 0:
+            # Megvan a kép! Alapból kis képet ad, de átírjuk 600x600-as felbontásra, hogy szép legyen
+            artwork_url = response["results"][0]["artworkUrl100"]
+            high_res_url = artwork_url.replace("100x100bb.jpg", "600x600bb.jpg")
+            return high_res_url
+    except Exception:
+        pass
+    return "yt_logo"  # Ha hibára fut vagy nincs találat, az alapértelmezett képedet használja
 
 async def get_windows_media():
     global windows_manager
@@ -57,7 +74,7 @@ def get_linux_media():
         pass
     return None
 
-print(f"Rich Presence elindítva optimális időzítéssel...")
+print(f"Rich Presence elindítva borítókép-keresővel...")
 
 while True:
     connect_discord()
@@ -71,25 +88,33 @@ while True:
         try:
             if current_track:
                 title, artist = current_track.split(" - ", 1)
-                start_timestamp = int(time.time())
                 
+                # Tisztítás és borítókép lekérése az API-ból
+                print(f"Borítókép keresése a neten: {title}...")
+                cover_image_url = get_album_art_url(title, artist)
+                
+                RPC.clear()
+                time.sleep(0.2)
+                
+                clean_timestamp = int(time.time())
+                
+                # Beküldjük a Discordnak a közvetlen kép-linket (large_image lehet URL is!)
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
-                    start=start_timestamp
+                    start=clean_timestamp,
+                    large_image=cover_image_url,
+                    large_text=f"Album: {title}"
                 )
-                print(f"Frissítve: {current_track}")
+                print(f"Sikeresen frissítve borítóval: {current_track}")
             else:
                 RPC.clear()
                 print("Zene leállítva.")
-                start_timestamp = None
             
             last_track = current_track
-        except Exception:
+        except Exception as e:
+            print(f"Discord hiba: {e}")
             is_connected = False
             last_track = None
-            start_timestamp = None
             
-    # FELEMELTÜK 7 MÁSODPERCRE! Így nem akad ki a Discord hangcsatornája, 
-    # és a szerver sem fogja megállítani az idődet.
-    time.sleep(7)
+    time.sleep(5)
