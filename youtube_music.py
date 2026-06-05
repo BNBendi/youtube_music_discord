@@ -16,8 +16,6 @@ RPC = Presence(client_id)
 is_connected = False
 last_track = None
 start_timestamp = None
-
-# Globális változó a Windows managernek, hogy ne hozzuk létre újra meg újra
 windows_manager = None
 
 def connect_discord():
@@ -30,14 +28,11 @@ def connect_discord():
     except Exception:
         is_connected = False
 
-# --- WINDOWS MÉDIA LEKÉRÉS (JAVÍTOTT, AZONNALI FRISSÍTÉS) ---
 async def get_windows_media():
     global windows_manager
     try:
-        # Csak egyszer inicializáljuk a managert, így nem ragad be a cache!
         if windows_manager is None:
             windows_manager = await SessionManager.request_async()
-            
         current_session = windows_manager.get_current_session()
         if current_session:
             source_app = current_session.source_app_user_model_id.lower()
@@ -46,11 +41,9 @@ async def get_windows_media():
                 if info.title:
                     return f"{info.title} - {info.artist}"
     except Exception:
-        # Ha összeomlana a manager, nullázzuk, hogy a következő körben újraépítse
         windows_manager = None
     return None
 
-# --- LINUX MÉDIA LEKÉRÉS ---
 def get_linux_media():
     try:
         for uri in get_players_uri():
@@ -64,7 +57,7 @@ def get_linux_media():
         pass
     return None
 
-print(f"Rich Presence elindítva ({sys.platform} módban, azonnali frissítéssel)...")
+print(f"Rich Presence elindítva optimális időzítéssel...")
 
 while True:
     connect_discord()
@@ -74,7 +67,6 @@ while True:
     else:
         current_track = get_linux_media()
     
-    # Ha új szám kezdődött (most már azonnal észre fogja venni!)
     if is_connected and current_track != last_track:
         try:
             if current_track:
@@ -84,20 +76,20 @@ while True:
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
-                    large_image="yt_logo",
                     start=start_timestamp
                 )
-                print(f"Azonnal frissítve: {current_track}")
+                print(f"Frissítve: {current_track}")
             else:
                 RPC.clear()
-                print("Zene leállítva, státusz törölve.")
+                print("Zene leállítva.")
                 start_timestamp = None
             
             last_track = current_track
         except Exception:
-            print("Discord kapcsolat megszakadt...")
             is_connected = False
             last_track = None
             start_timestamp = None
             
-    time.sleep(2) # 2 másodperc, hogy szinte azonnali legyen a váltás, amikor rákattintasz egy új zenére
+    # FELEMELTÜK 7 MÁSODPERCRE! Így nem akad ki a Discord hangcsatornája, 
+    # és a szerver sem fogja megállítani az idődet.
+    time.sleep(7)
