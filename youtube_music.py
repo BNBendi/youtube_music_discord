@@ -14,7 +14,8 @@ client_id = '1512429120431194217'
 
 RPC = Presence(client_id)
 is_connected = False
-last_track = None  # Itt jegyezzük meg, mi szólt legutóbb
+last_track = None
+start_timestamp = None  # Itt tároljuk, mikor kezdődött a szám
 
 def connect_discord():
     global is_connected
@@ -26,6 +27,7 @@ def connect_discord():
     except Exception:
         is_connected = False
 
+# --- WINDOWS MÉDIA LEKÉRÉS + IDŐZÍTÉS ---
 async def get_windows_media():
     try:
         manager = await SessionManager.request_async()
@@ -34,12 +36,20 @@ async def get_windows_media():
             source_app = current_session.source_app_user_model_id.lower()
             if "brave" in source_app or "chrome" in source_app:
                 info = await current_session.try_get_media_properties_async()
+                timeline = current_session.get_timeline_properties()
+                
                 if info.title:
-                    return f"{info.title} - {info.artist}"
+                    # Kiszámoljuk, mikor kezdődött a szám a Windows pozíció alapján
+                    # timeline.position megmondja, hány másodperce megy a szám
+                    position_seconds = timeline.position.total_seconds()
+                    calculated_start = int(time.time() - position_seconds)
+                    
+                    return f"{info.title} - {info.artist}", calculated_start
     except Exception:
         pass
-    return None
+    return None, None
 
+# --- LINUX MÉDIA LEKÉRÉS + IDŐZÍTÉS ---
 def get_linux_media():
     try:
         for uri in get_players_uri():
@@ -48,42 +58,54 @@ def get_linux_media():
                 meta = player.Metadata
                 title = meta.get('xesam:title', 'Ismeretlen szám')
                 artist = ", ".join(meta.get('xesam:artist', ['Ismeretlen előadó']))
-                return f"{title} - {artist}"
+                
+                # Linux alatt az mpris mikromásodpercben adja meg a pozíciót
+                try:
+                    position_seconds = player.Position / 1000000
+                except:
+                    position_seconds = 0
+                calculated_start = int(time.time() - position_seconds)
+                
+                return f"{title} - {artist}", calculated_start
     except Exception:
         pass
-    return None
+    return None, None
 
-print(f"Rich Presence elindítva ({sys.platform} módban)...")
+print(f"Rich Presence elindítva ({sys.platform} módban, számlálóval)...")
 
 while True:
     connect_discord()
     
-    # Lekérjük az aktuális zenét
     if IS_WINDOWS:
-        current_track = asyncio.run(get_windows_media())
+        current_track, track_start = asyncio.run(get_windows_media())
     else:
-        current_track = get_linux_media()
+        current_track, track_start = get_linux_media()
     
-    # CSAK AKKOR NYÚLUNK A DISCORDHOZ, HA VÁLTOZÁS TÖRTÉNT!
-    if is_connected and current_track != last_track:
+    # Ha változott a zene, VAGY ha a számláló nagyon elcsúszott (pl. áttekertél a számban)
+    if is_connected and (current_track != last_track or (track_start and start_timestamp and abs(track_start - start_timestamp) > 5)):
         try:
             if current_track:
-                # Szétválasztjuk a címet és az előadót a megjelenítéshez
                 title, artist = current_track.split(" - ", 1)
+                start_timestamp = track_start
+                
+                # Az `start=start_timestamp` paraméter indítja el a Discord számlálót!
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
-                    large_image="yt_logo"
+                    large_image="yt_logo",
+                    start=start_timestamp
                 )
-                print(f"Discord státusz frissítve: {current_track}")
+                print(f"Frissítve (számlálóval): {current_track}")
             else:
                 RPC.clear()
-                print("Zene leállítva, Discord státusz törölve.")
+                print("Zene leállítva, státusz törölve.")
+                start_timestamp = None
             
-            last_track = current_track  # Elmentjük az új állapotot
+            last_track = current_track
         except Exception:
             print("Discord kapcsolat megszakadt...")
             is_connected = False
             last_track = None
+            start_timestamp = None
             
-    time.sleep(5) # Levehetjük 5 másodpercre, mert az új logika nem spammeli a Discordot
+    time.sleep(3) # 3 másodpercre vettem le, hogy ha áttekersz a zenében, azonnal észrevegye és javítsa a számlálót!
