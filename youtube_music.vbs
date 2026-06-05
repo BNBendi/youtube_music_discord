@@ -1,0 +1,2 @@
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "C:\Users\user\Documents\java\youtube_music_discord\.venv\Scripts\python.exe C:\Users\user\Documents\java\youtube_music_discord\youtube_music.py", 0, False

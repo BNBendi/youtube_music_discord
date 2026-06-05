@@ -3,21 +3,18 @@ import sys
 import asyncio
 from pypresence import Presence
 
-# Megnézzük, milyen rendszeren futunk
 IS_WINDOWS = sys.platform.startswith('win')
 
 if IS_WINDOWS:
-    # Windows-specifikus import
     from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as SessionManager
 else:
-    # Linux-specifikus importok
     from mpris2 import get_players_uri, Player
 
-# A te Discord alkalmazás ID-d
 client_id = '1512429120431194217' 
 
 RPC = Presence(client_id)
 is_connected = False
+last_track = None  # Itt jegyezzük meg, mi szólt legutóbb
 
 def connect_discord():
     global is_connected
@@ -29,7 +26,6 @@ def connect_discord():
     except Exception:
         is_connected = False
 
-# --- WINDOWS MÉDIA LEKÉRÉS ---
 async def get_windows_media():
     try:
         manager = await SessionManager.request_async()
@@ -38,12 +34,12 @@ async def get_windows_media():
             source_app = current_session.source_app_user_model_id.lower()
             if "brave" in source_app or "chrome" in source_app:
                 info = await current_session.try_get_media_properties_async()
-                return info.title, info.artist
+                if info.title:
+                    return f"{info.title} - {info.artist}"
     except Exception:
         pass
-    return None, None
+    return None
 
-# --- LINUX MÉDIA LEKÉRÉS ---
 def get_linux_media():
     try:
         for uri in get_players_uri():
@@ -52,36 +48,42 @@ def get_linux_media():
                 meta = player.Metadata
                 title = meta.get('xesam:title', 'Ismeretlen szám')
                 artist = ", ".join(meta.get('xesam:artist', ['Ismeretlen előadó']))
-                return title, artist
+                return f"{title} - {artist}"
     except Exception:
         pass
-    return None, None
+    return None
 
 print(f"Rich Presence elindítva ({sys.platform} módban)...")
 
 while True:
     connect_discord()
     
-    # Rendszer alapján döntjük el, melyik függvényt hívjuk meg
+    # Lekérjük az aktuális zenét
     if IS_WINDOWS:
-        title, artist = asyncio.run(get_windows_media())
+        current_track = asyncio.run(get_windows_media())
     else:
-        title, artist = get_linux_media()
+        current_track = get_linux_media()
     
-    if is_connected:
+    # CSAK AKKOR NYÚLUNK A DISCORDHOZ, HA VÁLTOZÁS TÖRTÉNT!
+    if is_connected and current_track != last_track:
         try:
-            if title:
+            if current_track:
+                # Szétválasztjuk a címet és az előadót a megjelenítéshez
+                title, artist = current_track.split(" - ", 1)
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
                     large_image="yt_logo"
                 )
-                print(f"Frissítve: {title} - {artist}")
+                print(f"Discord státusz frissítve: {current_track}")
             else:
                 RPC.clear()
-                print("Nem szól semmi a Brave-ben...")
-        except Exception:
-            print("Discord kapcsolat megszakadt, újrapróbálkozás...")
-            is_connected = False
+                print("Zene leállítva, Discord státusz törölve.")
             
-    time.sleep(15)
+            last_track = current_track  # Elmentjük az új állapotot
+        except Exception:
+            print("Discord kapcsolat megszakadt...")
+            is_connected = False
+            last_track = None
+            
+    time.sleep(5) # Levehetjük 5 másodpercre, mert az új logika nem spammeli a Discordot
