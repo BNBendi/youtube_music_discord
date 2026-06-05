@@ -28,22 +28,23 @@ def connect_discord():
     except Exception:
         is_connected = False
 
-# --- ALBUM BORÍTÓ KERESŐ API ---
+# --- INTELLIGENSEBB ALBUM BORÍTÓ KERESŐ ---
 def get_album_art_url(title, artist):
     try:
-        # Tisztítjuk a keresési kifejezést a biztosabb találatért
-        query = f"{artist} {title}".replace(" - Topic", "").replace("(Official Video)", "")
+        # Kitakarítjuk a tipikus YouTube-os felesleges szövegeket a címből
+        clean_title = title.split('(')[0].split('[')[0].strip()
+        clean_artist = artist.replace(" - Topic", "").strip()
+        
+        query = f"{clean_artist} {clean_title}"
         url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
         
-        response = requests.get(url, timeout=3).json()
+        response = requests.get(url, timeout=2).json()
         if response.get("resultCount", 0) > 0:
-            # Megvan a kép! Alapból kis képet ad, de átírjuk 600x600-as felbontásra, hogy szép legyen
             artwork_url = response["results"][0]["artworkUrl100"]
-            high_res_url = artwork_url.replace("100x100bb.jpg", "600x600bb.jpg")
-            return high_res_url
+            return artwork_url.replace("100x100bb.jpg", "600x600bb.jpg")
     except Exception:
         pass
-    return "yt_logo"  # Ha hibára fut vagy nincs találat, az alapértelmezett képedet használja
+    return "yt_logo"
 
 async def get_windows_media():
     global windows_manager
@@ -74,7 +75,7 @@ def get_linux_media():
         pass
     return None
 
-print(f"Rich Presence elindítva borítókép-keresővel...")
+print(f"Rich Presence elindítva szinkronizált időzítővel és borítókkal...")
 
 while True:
     connect_discord()
@@ -87,18 +88,19 @@ while True:
     if is_connected and current_track != last_track:
         try:
             if current_track:
-                title, artist = current_track.split(" - ", 1)
-                
-                # Tisztítás és borítókép lekérése az API-ból
-                print(f"Borítókép keresése a neten: {title}...")
-                cover_image_url = get_album_art_url(title, artist)
-                
-                RPC.clear()
-                time.sleep(0.2)
-                
+                # KRITIKUS: Az időbélyeget AZONNAL elmentjük, mielőtt a neten keresnénk!
                 clean_timestamp = int(time.time())
                 
-                # Beküldjük a Discordnak a közvetlen kép-linket (large_image lehet URL is!)
+                title, artist = current_track.split(" - ", 1)
+                
+                print(f"Borítókép keresése: {title}...")
+                cover_image_url = get_album_art_url(title, artist)
+                
+                # Gyors memória ürítés a Discord felületnek
+                RPC.clear()
+                time.sleep(0.1)
+                
+                # Küldés a fix, mentett idővel
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
@@ -106,7 +108,7 @@ while True:
                     large_image=cover_image_url,
                     large_text=f"Album: {title}"
                 )
-                print(f"Sikeresen frissítve borítóval: {current_track}")
+                print(f"Frissítve borítóval és jó idővel: {current_track}")
             else:
                 RPC.clear()
                 print("Zene leállítva.")
