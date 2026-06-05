@@ -1,7 +1,6 @@
 import time
 import sys
 import asyncio
-import requests
 from pypresence import Presence
 
 IS_WINDOWS = sys.platform.startswith('win')
@@ -27,24 +26,6 @@ def connect_discord():
             print("Sikeresen csatlakozva a Discordhoz!")
     except Exception:
         is_connected = False
-
-# --- INTELLIGENSEBB ALBUM BORÍTÓ KERESŐ ---
-def get_album_art_url(title, artist):
-    try:
-        # Kitakarítjuk a tipikus YouTube-os felesleges szövegeket a címből
-        clean_title = title.split('(')[0].split('[')[0].strip()
-        clean_artist = artist.replace(" - Topic", "").strip()
-        
-        query = f"{clean_artist} {clean_title}"
-        url = f"https://itunes.apple.com/search?term={query}&entity=song&limit=1"
-        
-        response = requests.get(url, timeout=2).json()
-        if response.get("resultCount", 0) > 0:
-            artwork_url = response["results"][0]["artworkUrl100"]
-            return artwork_url.replace("100x100bb.jpg", "600x600bb.jpg")
-    except Exception:
-        pass
-    return "yt_logo"
 
 async def get_windows_media():
     global windows_manager
@@ -75,7 +56,7 @@ def get_linux_media():
         pass
     return None
 
-print(f"Rich Presence elindítva szinkronizált időzítővel és borítókkal...")
+print(f"Rich Presence elindítva a pontos képnévvel és stopperrel...")
 
 while True:
     connect_discord()
@@ -88,27 +69,24 @@ while True:
     if is_connected and current_track != last_track:
         try:
             if current_track:
-                # KRITIKUS: Az időbélyeget AZONNAL elmentjük, mielőtt a neten keresnénk!
-                clean_timestamp = int(time.time())
-                
                 title, artist = current_track.split(" - ", 1)
                 
-                print(f"Borítókép keresése: {title}...")
-                cover_image_url = get_album_art_url(title, artist)
+                # Mentjük a tiszta időt azonnal
+                clean_timestamp = int(time.time())
                 
-                # Gyors memória ürítés a Discord felületnek
+                # Kitöröljük a beragadt Discord memóriát
                 RPC.clear()
-                time.sleep(0.1)
+                time.sleep(0.2)
                 
-                # Küldés a fix, mentett idővel
+                # Frissítés a pontos képnévvel (youtube_music_logo)
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
                     start=clean_timestamp,
-                    large_image=cover_image_url,
-                    large_text=f"Album: {title}"
+                    large_image="youtube_music_logo",  # JAVÍTVA a te képed nevére!
+                    large_text="YouTube Music"
                 )
-                print(f"Frissítve borítóval és jó idővel: {current_track}")
+                print(f"Frissítve: {current_track}")
             else:
                 RPC.clear()
                 print("Zene leállítva.")
@@ -119,4 +97,4 @@ while True:
             is_connected = False
             last_track = None
             
-    time.sleep(5)
+    time.sleep(4)
