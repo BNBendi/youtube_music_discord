@@ -1,8 +1,6 @@
 import time
 import sys
 import asyncio
-import requests
-import urllib.parse
 from pypresence import Presence
 
 IS_WINDOWS = sys.platform.startswith('win')
@@ -12,6 +10,7 @@ if IS_WINDOWS:
 else:
     from mpris2 import get_players_uri, Player
 
+# A te saját alkalmazásod azonosítója
 client_id = '1512429120431194217' 
 
 RPC = Presence(client_id)
@@ -28,28 +27,6 @@ def connect_discord():
             print("Sikeresen csatlakozva a Discordhoz!")
     except Exception:
         is_connected = False
-
-# --- PROXY-VAL MEGTÁMOGATOTT BORÍTÓKERESŐ ---
-def get_album_art_url(title, artist):
-    try:
-        clean_title = title.split('(')[0].split('[')[0].strip()
-        clean_artist = artist.replace(" - Topic", "").strip()
-        
-        query = f"{clean_artist} {clean_title}"
-        url = f"https://itunes.apple.com/search?term={urllib.parse.quote(query)}&entity=song&limit=1"
-        
-        response = requests.get(url, timeout=2).json()
-        if response.get("resultCount", 0) > 0:
-            artwork_url = response["results"][0]["artworkUrl100"]
-            high_res_url = artwork_url.replace("100x100bb.jpg", "500x500bb.jpg")
-            
-            # ATOMBIZTOS TRÜKK: Áttoljuk a képet a Discord saját proxy szerverén, 
-            # így a kliens engedni fogja a betöltést!
-            proxy_url = f"https://images.media-allspice.discordapp.net/external/{high_res_url.replace('https://', '')}"
-            return high_res_url
-    except Exception:
-        pass
-    return "youtube_music_logo" # Ha nincs találat, visszaugrik a te logódra
 
 async def get_windows_media():
     global windows_manager
@@ -80,7 +57,7 @@ def get_linux_media():
         pass
     return None
 
-print(f"Saját Rich Presence elindítva proxy-s borítókezeléssel...")
+print("YouTube Music Rich Presence elindítva...")
 
 while True:
     connect_discord()
@@ -93,28 +70,23 @@ while True:
     if is_connected and current_track != last_track:
         try:
             if current_track:
-                # 1. Mentjük az időt azonnal
-                clean_timestamp = int(time.time())
-                
                 title, artist = current_track.split(" - ", 1)
                 
-                # 2. Lekérjük a működő képlinket
-                print(f"Borítókép keresése: {title}...")
-                cover_image_url = get_album_art_url(title, artist)
+                # AZONNAL mentjük az időbélyeget, hogy a stopper pontos legyen
+                clean_timestamp = int(time.time())
                 
-                # 3. Kitisztítjuk a Discord memóriáját a fagyás ellen
                 RPC.clear()
                 time.sleep(0.2)
                 
-                # 4. Küldés az új adatokkal
+                # Csak a Developer Portalra feltöltött pontos kulcsnév működik!
                 RPC.update(
                     details=f"🎵 {title}",
                     state=f"👤 {artist}",
                     start=clean_timestamp,
-                    large_image=cover_image_url,
-                    large_text=f"Album: {title}"
+                    large_image="youtube_music_logo",  # Ez a te képed neve a portálról!
+                    large_text="YouTube Music"
                 )
-                print(f"Sikeresen frissítve a saját kódoddal: {current_track}")
+                print(f"Sikeresen frissítve a Discordon: {current_track}")
             else:
                 RPC.clear()
                 print("Zene leállítva.")
@@ -125,4 +97,4 @@ while True:
             is_connected = False
             last_track = None
             
-    time.sleep(5)
+    time.sleep(4)
