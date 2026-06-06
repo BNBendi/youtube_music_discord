@@ -27,7 +27,6 @@ def connect_discord():
     except Exception:
         is_connected = False
 
-# --- FELOKOSÍTOTT WINDOWS MÉDIA LEKÉRDEZÉS ---
 async def get_windows_media():
     global windows_manager
     try:
@@ -37,30 +36,37 @@ async def get_windows_media():
         if current_session:
             source_app = current_session.source_app_user_model_id.lower()
             if "brave" in source_app or "chrome" in source_app:
-                
-                # 1. Lekérjük a címet és az előadót
                 info = await current_session.try_get_media_properties_async()
                 
-                # 2. Lekérjük a szám hosszát és pozícióját (Timeline)
-                timeline = current_session.get_timeline_properties()
-                
                 if info.title:
-                    # Kiszámoljuk másodpercben a teljes hosszt és hogy hol tart a zene
-                    total_seconds = timeline.end_position.total_seconds()
-                    position_seconds = timeline.position.total_seconds()
-                    
-                    return {
+                    track_data = {
                         "track_info": f"{info.title} - {info.artist}",
                         "title": info.title,
                         "artist": info.artist,
-                        "total_duration": total_seconds,
-                        "current_position": position_seconds
+                        "total_duration": 0,
+                        "current_position": 0
                     }
-    except Exception as e:
+                    
+                    try:
+                        timeline = current_session.get_timeline_properties()
+                        if timeline:
+                            # ÁTVÁLTÁS: A Windows belső Ticks értékét (100-nanoszekundum) másodperccé alakítjuk (/ 10.000.000)
+                            # Ha a Winsdk közvetlenül engedi a .total_seconds()-et, akkor azt használjuk, ha nem, a belső duration-t
+                            try:
+                                track_data["total_duration"] = int(timeline.end_position.total_seconds())
+                                track_data["current_position"] = int(timeline.position.total_seconds())
+                            except AttributeError:
+                                track_data["total_duration"] = int(timeline.end_position.duration / 10000000)
+                                track_data["current_position"] = int(timeline.position.duration / 10000000)
+                    except Exception:
+                        pass
+                        
+                    return track_data
+    except Exception:
         windows_manager = None
     return None
 
-print("YouTube Music Rich Presence elindítva (Szám hossza kijelzéssel)...")
+print("YouTube Music Rich Presence elindítva (Javított másodperc-alapú kijelzéssel)...")
 
 while True:
     connect_discord()
@@ -68,45 +74,47 @@ while True:
     if IS_WINDOWS:
         media_data = asyncio.run(get_windows_media())
     else:
-        media_data = None # Linuxon bonyolultabb, most a Windowsra fókuszálunk
+        media_data = None
     
     if media_data:
         current_track = media_data["track_info"]
         
-        # Ha új szám kezdődött, vagy a felhasználó beletekert a zenébe
         if is_connected and current_track != last_track:
             try:
                 now = int(time.time())
+                start_timestamp = now
+                end_timestamp = None
                 
-                # KISZÁMOLJUK A DISCORDNAK A START ÉS END IDŐKET:
-                # A start idő az, amikor a szám ELINDULT a valóságban (mostani idő mínusz ahol épp tart a zene)
-                start_timestamp = now - int(media_data["current_position"])
-                # A vég idő pedig a start idő plusz a szám teljes hossza
-                end_timestamp = start_timestamp + int(media_data["total_duration"])
+                # Csak akkor számolunk csíkot, ha értelmes hosszt kaptunk vissza
+                if media_data["total_duration"] > 0:
+                    start_timestamp = now - media_data["current_position"]
+                    end_timestamp = start_timestamp + media_data["total_duration"]
                 
                 RPC.clear()
                 time.sleep(0.2)
                 
-                # Küldés a Discordnak a pontos számdurációval!
                 RPC.update(
                     details=f"🎵 {media_data['title']}",
                     state=f"👤 {media_data['artist']}",
-                    start=start_timestamp,  # Mikor indult a szám
-                    end=end_timestamp,      # Mikor jár le a szám
+                    start=start_timestamp,
+                    end=end_timestamp,
                     large_image="youtube_music_logo",
                     large_text="YouTube Music"
                 )
-                print(f"Frissítve a szám hosszával: {current_track}")
+                print(f"Frissítve a Discordon: {current_track} ({media_data['total_duration']} mp)")
                 last_track = current_track
                 
             except Exception as e:
-                print(f"Discord hiba: {e}")
+                print(f"Discord hiba az update-nél: {e}")
                 is_connected = False
                 last_track = None
     else:
         if last_track is not None:
-            RPC.clear()
+            try:
+                RPC.clear()
+            except Exception:
+                pass
             print("Zene leállítva.")
             last_track = None
             
-    time.sleep(2) # Sűrűbben ellenőrizzük (2 mp), hogy ha belatekered a zenébe, lekövesse
+    time.sleep(3)
