@@ -7,3 +7,4 @@ pip install pypresence winsdk
 python youtube_music.py
 
 for Linux
+honsetly i forgot ask gemini im currently on windows cus this makes my life miserable
