@@ -1,0 +1,9 @@
+For Windows
+
+py -m venv .venv
+.\.venv\Scripts\Activate
+python.exe -m pip install --upgrade pip
+pip install pypresence winsdk
+python youtube_music.py
+
+for Linux
