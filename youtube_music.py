@@ -17,10 +17,10 @@ is_connected = False
 last_track = None
 windows_manager = None
 
-# Belső motor változói a fagyás ellen
+# Belső óra motor változói
+start_time = time.time()
 local_current_position = 0
 local_total_duration = 0
-last_update_time = 0
 
 def format_time(seconds):
     if seconds is None or seconds < 0:
@@ -29,11 +29,14 @@ def format_time(seconds):
     secs = int(seconds) % 60
     return f"{minutes}:{secs:02d}"
 
-def make_progress_bar(current, total, bar_length=14):
+def make_progress_bar(current, total, bar_length=15):
     if not total or total <= 0:
-        return "🔘" + "▬" * (bar_length - 1)
-    
+        total = 180  # Alapértelmezett 3 perc, ha a Windows nem ad hosszat
+        
     fraction = current / total
+    if fraction > 1.0:
+        fraction = 1.0
+        
     dot_position = int(fraction * bar_length)
     if dot_position >= bar_length:
         dot_position = bar_length - 1
@@ -44,7 +47,6 @@ def make_progress_bar(current, total, bar_length=14):
             bar += "🔘"
         else:
             bar += "▬"
-            
     return bar
 
 def connect_discord():
@@ -94,7 +96,7 @@ async def get_windows_media():
         windows_manager = None
     return None
 
-print("YouTube Music Rich Presence elindítva (Kényszerített szinkronizáció)...")
+print("YouTube Music Rich Presence elindítva (Élő egyedi idősávval)...")
 
 while True:
     connect_discord()
@@ -107,36 +109,40 @@ while True:
     now = time.time()
     
     if media_data:
+        # Új szám kezelése
         if media_data["track_info"] != last_track:
-            local_current_position = media_data["current_position"]
-            local_total_duration = media_data["total_duration"]
-            last_update_time = now
+            start_time = now
+            if media_data["total_duration"] <= 0:
+                local_total_duration = 180  # 3 perces alapértelmezett hossz
+            else:
+                local_total_duration = media_data["total_duration"]
+                
             last_track = media_data["track_info"]
             print(f"Új zeneszám: {last_track}")
-        else:
-            time_passed = now - last_update_time
-            expected_pos = local_current_position + time_passed
             
-            if abs(media_data["current_position"] - expected_pos) > 4:
-                local_current_position = media_data["current_position"]
-                last_update_time = now
-            else:
-                local_current_position = expected_pos
-                last_update_time = now
-                
-            if local_total_duration > 0 and local_current_position > local_total_duration:
-                local_current_position = local_total_duration
+        # Folyamatos, valós idejű számlálás másodpercenként
+        elapsed = int(now - start_time)
+        
+        # Ha a Windows pontos pozíciót küld és eltérést látunk (pl. tekerés), szinkronizálunk
+        if media_data["current_position"] > 0 and abs(media_data["current_position"] - elapsed) > 4:
+            local_current_position = media_data["current_position"]
+            start_time = now - local_current_position
+        else:
+            local_current_position = elapsed
 
-        # Sáv és idő formázása
+        if local_current_position > local_total_duration:
+            local_current_position = local_total_duration
+
+        # Formázás: A csík és a pontos idő egy sorba kerül
         p_bar = make_progress_bar(local_current_position, local_total_duration)
         time_text = f"[{format_time(local_current_position)} / {format_time(local_total_duration)}]"
         
         if is_connected:
             try:
-                # MEZŐCSERE: A csík megy legfelülre, így kitörli a zöld órát!
+                # Nem küldünk se start, se end paramétert -> EZELTÜNTETI A ZÖLD IKONT!
                 RPC.update(
-                    details=f"{p_bar} {time_text}",
-                    state=f"🎵 {media_data['title']} - {media_data['artist']}",
+                    details=f"🎵 {media_data['title']} - {media_data['artist']}",
+                    state=f"{p_bar} {time_text}",
                     large_image="youtube_music_logo",
                     large_text="YouTube Music"
                 )
@@ -151,7 +157,5 @@ while True:
                 pass
             print("Zene leállítva.")
             last_track = None
-            local_current_position = 0
-            local_total_duration = 0
             
-    time.sleep(1)
+    time.sleep(1)  # Szigorúan 1 másodperces frissítés, hogy ne legyen delay!
