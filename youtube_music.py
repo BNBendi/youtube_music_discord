@@ -17,6 +17,31 @@ is_connected = False
 last_track = None
 windows_manager = None
 
+def format_time(seconds):
+    if seconds is None or seconds < 0:
+        return "0:00"
+    minutes = int(seconds) // 60
+    secs = int(seconds) % 60
+    return f"{minutes}:{secs:02d}"
+
+def make_progress_bar(current, total, bar_length=10):
+    if not total or total <= 0:
+        return "🔘" + "▬" * (bar_length - 1)
+    
+    fraction = current / total
+    dot_position = int(fraction * bar_length)
+    if dot_position >= bar_length:
+        dot_position = bar_length - 1
+        
+    bar = ""
+    for i in range(bar_length):
+        if i == dot_position:
+            bar += "🔘"
+        else:
+            bar += "▬"
+            
+    return bar
+
 def connect_discord():
     global is_connected
     try:
@@ -50,8 +75,6 @@ async def get_windows_media():
                     try:
                         timeline = current_session.get_timeline_properties()
                         if timeline:
-                            # ÁTVÁLTÁS: A Windows belső Ticks értékét (100-nanoszekundum) másodperccé alakítjuk (/ 10.000.000)
-                            # Ha a Winsdk közvetlenül engedi a .total_seconds()-et, akkor azt használjuk, ha nem, a belső duration-t
                             try:
                                 track_data["total_duration"] = int(timeline.end_position.total_seconds())
                                 track_data["current_position"] = int(timeline.position.total_seconds())
@@ -66,7 +89,7 @@ async def get_windows_media():
         windows_manager = None
     return None
 
-print("YouTube Music Rich Presence elindítva (Javított másodperc-alapú kijelzéssel)...")
+print("YouTube Music Rich Presence elindítva (Egyedi mozgó sávval)...")
 
 while True:
     connect_discord()
@@ -77,37 +100,29 @@ while True:
         media_data = None
     
     if media_data:
-        current_track = media_data["track_info"]
+        # 1. Elkészítjük a vizuális csíkot (pl. ▬🔘▬▬▬▬)
+        p_bar = make_progress_bar(media_data["current_position"], media_data["total_duration"])
         
-        if is_connected and current_track != last_track:
+        # 2. Megformázzuk a perceket (pl. 1:20 / 3:45)
+        time_text = f"[{format_time(media_data['current_position'])} / {format_time(media_data['total_duration'])}]"
+        
+        if is_connected:
             try:
-                now = int(time.time())
-                start_timestamp = now
-                end_timestamp = None
-                
-                # Csak akkor számolunk csíkot, ha értelmes hosszt kaptunk vissza
-                if media_data["total_duration"] > 0:
-                    start_timestamp = now - media_data["current_position"]
-                    end_timestamp = start_timestamp + media_data["total_duration"]
-                
-                RPC.clear()
-                time.sleep(0.2)
-                
+                # FONTOS JAVÍTÁS: KIVETTÜK a 'start' és 'end' paramétereket, 
+                # így a Discord kénytelen a mi saját mintánkat kirajzolni!
                 RPC.update(
                     details=f"🎵 {media_data['title']}",
-                    state=f"👤 {media_data['artist']}",
-                    start=start_timestamp,
-                    end=end_timestamp,
+                    state=f"{p_bar} {time_text}", # Ez fog megjelenni a stopper helyén!
                     large_image="youtube_music_logo",
-                    large_text="YouTube Music"
+                    large_text=f"Előadó: {media_data['artist']}"
                 )
-                print(f"Frissítve a Discordon: {current_track} ({media_data['total_duration']} mp)")
-                last_track = current_track
                 
+                if media_data["track_info"] != last_track:
+                    print(f"Most szól: {media_data['track_info']}")
+                    last_track = media_data["track_info"]
             except Exception as e:
-                print(f"Discord hiba az update-nél: {e}")
+                print(f"Discord hiba: {e}")
                 is_connected = False
-                last_track = None
     else:
         if last_track is not None:
             try:
@@ -117,4 +132,4 @@ while True:
             print("Zene leállítva.")
             last_track = None
             
-    time.sleep(3)
+    time.sleep(1)
