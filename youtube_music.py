@@ -17,7 +17,7 @@ is_connected = False
 last_track = None
 windows_manager = None
 
-# Háttér-óra változók a folyamatos mozgáshoz
+# Belső motor változói a fagyás ellen
 local_current_position = 0
 local_total_duration = 0
 last_update_time = 0
@@ -29,7 +29,7 @@ def format_time(seconds):
     secs = int(seconds) % 60
     return f"{minutes}:{secs:02d}"
 
-def make_progress_bar(current, total, bar_length=12):
+def make_progress_bar(current, total, bar_length=14):
     if not total or total <= 0:
         return "🔘" + "▬" * (bar_length - 1)
     
@@ -94,7 +94,7 @@ async def get_windows_media():
         windows_manager = None
     return None
 
-print("YouTube Music Rich Presence elindítva (Saját belső motorral, mozgó csúszkával)...")
+print("YouTube Music Rich Presence elindítva (Kényszerített szinkronizáció)...")
 
 while True:
     connect_discord()
@@ -107,41 +107,36 @@ while True:
     now = time.time()
     
     if media_data:
-        # Ha új szám kezdődött
         if media_data["track_info"] != last_track:
             local_current_position = media_data["current_position"]
             local_total_duration = media_data["total_duration"]
             last_update_time = now
             last_track = media_data["track_info"]
-            print(f"Most szól: {last_track}")
+            print(f"Új zeneszám: {last_track}")
         else:
-            # Ha ugyanaz a szám megy, megnézzük, hogy a Windows jelentett-e hirtelen tekerést
-            # Ha a különbség a belső óránk és a Windows között nagyobb mint 4 másodperc, akkor szinkronizálunk
             time_passed = now - last_update_time
             expected_pos = local_current_position + time_passed
             
             if abs(media_data["current_position"] - expected_pos) > 4:
-                # Beletekerést észleltünk! Átvesszük a Windows új idejét
                 local_current_position = media_data["current_position"]
                 last_update_time = now
             else:
-                # Sima lejátszás: a Python saját maga lépteti előre az időt másodpercenként!
                 local_current_position = expected_pos
                 last_update_time = now
                 
-            # Biztonsági korlát: ne fusson túl a szám hosszán
             if local_total_duration > 0 and local_current_position > local_total_duration:
                 local_current_position = local_total_duration
 
-        # Kirakjuk a grafikát a saját belső számaink alapján
+        # Sáv és idő formázása
         p_bar = make_progress_bar(local_current_position, local_total_duration)
-        time_text = f"{format_time(local_current_position)} / {format_time(local_total_duration)}"
+        time_text = f"[{format_time(local_current_position)} / {format_time(local_total_duration)}]"
         
         if is_connected:
             try:
+                # MEZŐCSERE: A csík megy legfelülre, így kitörli a zöld órát!
                 RPC.update(
-                    details=f"🎵 {media_data['title']} - {media_data['artist']}",
-                    state=f"{p_bar} {time_text}",
+                    details=f"{p_bar} {time_text}",
+                    state=f"🎵 {media_data['title']} - {media_data['artist']}",
                     large_image="youtube_music_logo",
                     large_text="YouTube Music"
                 )
@@ -159,4 +154,4 @@ while True:
             local_current_position = 0
             local_total_duration = 0
             
-    time.sleep(1) # 1 másodperces sima frissítés a gomb egyenletes csúszásához
+    time.sleep(1)
